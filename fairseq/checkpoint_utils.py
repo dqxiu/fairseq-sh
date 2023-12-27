@@ -55,10 +55,9 @@ def save_checkpoint(
 
     if getattr(epoch_itr, "sharded_checkpoint", False):
         local_state_dict = extra_state["train_iterator"]
-        all_state_dicts = dist_utils.all_gather_list(
-            local_state_dict,
-            max_size=getattr(trainer.cfg.common, "all_gather_list_size", 16384),
-            group=trainer.data_parallel_process_group,
+        all_state_dicts = [None for _ in range(trainer.data_parallel_world_size)]
+        torch.distributed.all_gather_object(
+            all_state_dicts, local_state_dict, group=trainer.data_parallel_process_group
         )
         extra_state["train_iterator"] = all_state_dicts
 
