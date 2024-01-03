@@ -85,8 +85,10 @@ class LegacyDistributedDataParallel(nn.Module):
         assert all([len([k for k in t if hasattr(k, 'base_expert')]) == 0 for t in per_device_params])
 
         # assign local pg
-        assert hasattr(get_moe_group, "_moe_groups") # need to init groups first
-        _, self.local_pg = get_moe_group()
+        if hasattr(get_moe_group, "_moe_groups"): # need to init groups first
+            _, self.local_pg = get_moe_group()
+        else:
+            self.local_pg = None
 
         #start_pdb_on_rank_zero()
         #print('hi')
@@ -155,7 +157,8 @@ class LegacyDistributedDataParallel(nn.Module):
         curr_world_size = dist.get_world_size(self.process_group)
         self._all_reduce_grads(self.per_device_params_normal, self.buffer, self.process_group, curr_world_size)
         # reduce expert params
-        self._all_reduce_grads(self.per_device_params_expert, self.buffer, self.local_pg, curr_world_size)
+        if self.local_pg is not None:
+            self._all_reduce_grads(self.per_device_params_expert, self.buffer, self.local_pg, curr_world_size)
 
 
     def _all_reduce_grads(self, current_params, curr_buffer, curr_process_group, curr_world_size):
