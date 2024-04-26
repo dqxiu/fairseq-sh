@@ -105,6 +105,12 @@ def main(cfg: FairseqConfig) -> None:
             model = fsdp_wrap(task.build_model(cfg.model))
     else:
         model = task.build_model(cfg.model)
+        
+    # disable gradients of layernorm and embedding
+    if cfg.task.disable_emb_ln_grad:
+        for name, param in model.named_parameters():
+            if "embed" in name or "layer_norm" in name:
+                param.requires_grad = False
     criterion = task.build_criterion(cfg.criterion)
 
     def is_expert_param(p):
@@ -273,7 +279,8 @@ def train(
         if epoch_itr.epoch <= len(cfg.optimization.update_freq)
         else cfg.optimization.update_freq[-1]
     )
-    itr = iterators.GroupedIterator(itr, update_freq)
+    itr = iterators.GroupedIterator(
+        itr, update_freq, skip_remainder_batch=cfg.optimization.skip_remainder_batch,)
     if cfg.common.tpu:
         itr = utils.tpu_data_loader(itr)
     progress = progress_bar.progress_bar(
@@ -345,17 +352,12 @@ def train(
                 metrics.reset_meters("train_inner")
 
         end_of_epoch = not itr.has_next()
-        valid_losses, should_stop = validate_and_save(
-            cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
-        )
+        valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
         loss_diff_list.append(loss_diff)
 
         if len(loss_diff_list) >= cfg.task.train_data_num:
             should_stop = True
-            break
-        
-        if should_stop:
             break
 
         # reset the model and the optimizer
@@ -437,6 +439,7 @@ def validate_and_save(
         )
     )
     do_validate = (
+        (
         (not end_of_epoch and do_save)  # validate during mid-epoch saves
         or (end_of_epoch and epoch_itr.epoch % cfg.dataset.validate_interval == 0)
         or should_stop
@@ -445,7 +448,10 @@ def validate_and_save(
             and num_updates > 0
             and num_updates % cfg.dataset.validate_interval_updates == 0
         )
-    ) and not cfg.dataset.disable_validation
+    ) 
+    and not cfg.dataset.disable_validation
+    and num_updates >= cfg.dataset.validate_after_updates
+    )
     valid_losses = [None]
     if do_validate:
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
@@ -486,6 +492,7 @@ def validate(
     task: tasks.FairseqTask,
     epoch_itr,
     subsets: List[str],
+    get_valid_grad=False,
 ) -> List[Optional[float]]:
     """Evaluate the model on the validation set(s) and return the losses."""
 
@@ -544,11 +551,14 @@ def validate(
                 if cfg.dataset.max_valid_steps is not None and i > cfg.dataset.max_valid_steps:
                     break
                 # trainer.valid_step(sample)
-                inner_logging_outputs = trainer.valid_step(sample)
+                inner_logging_outputs = trainer.valid_step(sample, get_valid_grad=get_valid_grad)
                 logging_outputs.extend(inner_logging_outputs)
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
         # log validation stats
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
+
+        if hasattr(task, "post_validate"):
+            task.post_validate(trainer.get_model(), stats, agg)
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
         valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
     return valid_losses
