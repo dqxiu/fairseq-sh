@@ -105,6 +105,15 @@ def main(cfg: FairseqConfig) -> None:
             model = fsdp_wrap(task.build_model(cfg.model))
     else:
         model = task.build_model(cfg.model)
+    # disable gradients of layernorm and embedding
+
+    if cfg.task.disable_emb_ln_grad:
+
+        for name, param in model.named_parameters():
+
+            if "embed" in name or "layer_norm" in name:
+
+                param.requires_grad = False
     criterion = task.build_criterion(cfg.criterion)
 
     def is_expert_param(p):
@@ -246,6 +255,18 @@ def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
             return False
 
 
+def get_gradient_of_model(model):
+    gradients = None
+    for name, param in model.named_parameters():
+        if "embed" not in name and "self_attn" not in name and "layer_norm" not in name and "bias" not in name:
+            if gradients is None:
+                gradients = torch.flatten(param.grad.clone().detach())
+            else:
+                gradients = torch.cat(
+                    [gradients, torch.flatten(param.grad.clone().detach())])
+
+    return gradients
+
 @metrics.aggregate("train")
 def train(
     cfg: DictConfig, trainer: Trainer, task: tasks.FairseqTask, epoch_itr
@@ -261,7 +282,9 @@ def train(
         if epoch_itr.epoch <= len(cfg.optimization.update_freq)
         else cfg.optimization.update_freq[-1]
     )
-    itr = iterators.GroupedIterator(itr, update_freq)
+    # itr = iterators.GroupedIterator(itr, update_freq)
+    itr = iterators.GroupedIterator(
+        itr, update_freq, skip_remainder_batch=cfg.optimization.skip_remainder_batch,)
     if cfg.common.tpu:
         itr = utils.tpu_data_loader(itr)
     progress = progress_bar.progress_bar(
@@ -300,30 +323,59 @@ def train(
     should_stop = False
     num_updates = trainer.get_num_updates()
     logger.info("Start iterating over samples")
+
+    assert not os.path.exists(cfg.task.res_file)
+    logger.info("Baseline Validation Loss")
+    valid_losses = validate(cfg, trainer, task, epoch_itr,
+                            valid_subsets, get_valid_grad=True)
+    baseline_valid_loss = valid_losses[0]
+    grad_valid = get_gradient_of_model(trainer._model)
+    trainer._model.zero_grad()
+    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.model.gpt_model_path)
+    grad_cos_list, loss_diff_list = [], []
     for i, samples in enumerate(progress):
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
-
+        grad_train = get_gradient_of_model(trainer._model)
+        grad_cos = F.cosine_similarity(grad_train.unsqueeze(
+            0), grad_valid.unsqueeze(0))[0].item()
+        grad_cos_list.append(grad_cos)
+        
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
             if num_updates % cfg.common.log_interval == 0:
                 stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
                 progress.log(stats, tag="train_inner", step=num_updates)
-
                 # reset mid-epoch stats after each log interval
                 # the end-of-epoch stats will still be preserved
                 metrics.reset_meters("train_inner")
 
         end_of_epoch = not itr.has_next()
-        valid_losses, should_stop = validate_and_save(
-            cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
-        )
-
-        if should_stop:
+        valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
+        loss_diff = baseline_valid_loss - valid_losses[0]
+        loss_diff_list.append(loss_diff)
+        if len(loss_diff_list) >= cfg.task.train_data_num:
+            should_stop = True
             break
+
+        # reset the model and the optimizer
+
+        trainer._model.load_state_dict(
+            state["model"], strict=True, args=cfg.model)
+        trainer._build_optimizer()
+
+    # save grad_cos and loss_diff
+    res = {"loss_diff": loss_diff_list, "grad_cos_list": grad_cos_list}
+    directory = os.path.dirname(cfg.task.res_file)
+
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    with open(cfg.task.res_file, "w") as fout:
+        fout.write(json.dumps(res, indent=4))
 
     # log end-of-epoch stats
     logger.info("end of epoch {} (average epoch stats below)".format(epoch_itr.epoch))
@@ -391,16 +443,21 @@ def validate_and_save(
             and num_updates >= cfg.dataset.validate_after_updates
         )
     )
+
     do_validate = (
-        (not end_of_epoch and do_save)  # validate during mid-epoch saves
-        or (end_of_epoch and epoch_itr.epoch % cfg.dataset.validate_interval == 0)
-        or should_stop
-        or (
-            cfg.dataset.validate_interval_updates > 0
-            and num_updates > 0
-            and num_updates % cfg.dataset.validate_interval_updates == 0
+        (
+            (not end_of_epoch and do_save)  # validate during mid-epoch saves
+            or (end_of_epoch and epoch_itr.epoch % cfg.dataset.validate_interval == 0)
+            or should_stop
+            or (
+                cfg.dataset.validate_interval_updates > 0
+                and num_updates > 0
+                and num_updates % cfg.dataset.validate_interval_updates == 0
+            )
         )
-    ) and not cfg.dataset.disable_validation
+        and not cfg.dataset.disable_validation
+        and num_updates >= cfg.dataset.validate_after_updates
+    )
     valid_losses = [None]
     if do_validate:
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
@@ -441,6 +498,7 @@ def validate(
     task: tasks.FairseqTask,
     epoch_itr,
     subsets: List[str],
+    get_valid_grad=False,
 ) -> List[Optional[float]]:
     """Evaluate the model on the validation set(s) and return the losses."""
 
@@ -499,11 +557,16 @@ def validate(
                 if cfg.dataset.max_valid_steps is not None and i > cfg.dataset.max_valid_steps:
                     break
                 # trainer.valid_step(sample)
-                inner_logging_outputs = trainer.valid_step(sample)
+                # inner_logging_outputs = trainer.valid_step(sample)
+                inner_logging_outputs = trainer.valid_step(
+                    sample, get_valid_grad=get_valid_grad)
+
                 logging_outputs.extend(inner_logging_outputs)
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
         # log validation stats
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
+        if hasattr(task, "post_validate"):
+            task.post_validate(trainer.get_model(), stats, agg)
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
         valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
     return valid_losses
