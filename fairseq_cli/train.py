@@ -376,7 +376,7 @@ def train(
 
     with open(cfg.task.res_file, "w") as fout:
         fout.write(json.dumps(res, indent=4))
-
+    logger.info("saved results to {}".format(cfg.task.res_file))
     # log end-of-epoch stats
     logger.info("end of epoch {} (average epoch stats below)".format(epoch_itr.epoch))
     stats = get_training_stats(metrics.get_smoothed_values("train"))
