@@ -282,9 +282,9 @@ def train(
         if epoch_itr.epoch <= len(cfg.optimization.update_freq)
         else cfg.optimization.update_freq[-1]
     )
-    # itr = iterators.GroupedIterator(itr, update_freq)
-    itr = iterators.GroupedIterator(
-        itr, update_freq, skip_remainder_batch=cfg.optimization.skip_remainder_batch,)
+    itr = iterators.GroupedIterator(itr, update_freq)
+    # itr = iterators.GroupedIterator(
+        # itr, update_freq, skip_remainder_batch=cfg.optimization.skip_remainder_batch,)
     if cfg.common.tpu:
         itr = utils.tpu_data_loader(itr)
     progress = progress_bar.progress_bar(

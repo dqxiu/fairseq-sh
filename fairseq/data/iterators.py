@@ -203,7 +203,8 @@ class StreamingEpochBatchIterator(EpochBatchIterating):
         self.epoch = self.next_epoch_idx
         if set_dataset_epoch and hasattr(self.dataset, "set_epoch"):
             self.dataset.set_epoch(self.epoch)
-        self._current_epoch_iterator = self._get_iterator_for_epoch(self.epoch, shuffle)
+        self._current_epoch_iterator = self._get_iterator_for_epoch(
+            self.epoch, shuffle)
         return self._current_epoch_iterator
 
     def end_of_epoch(self) -> bool:
@@ -326,7 +327,8 @@ class EpochBatchIterator(EpochBatchIterating):
     @property
     def frozen_batches(self):
         if self._frozen_batches is None:
-            self._frozen_batches = tuple(self.batch_sampler(self.dataset, self.epoch))
+            self._frozen_batches = tuple(
+                self.batch_sampler(self.dataset, self.epoch))
         return self._frozen_batches
 
     @property
@@ -463,19 +465,23 @@ class EpochBatchIterator(EpochBatchIterating):
                 batches = shuffle_batches(list(batches), self.seed + epoch)
 
             batches = list(
-                ShardedIterator(batches, self.num_shards, self.shard_id, fill_value=[])
+                ShardedIterator(batches, self.num_shards,
+                                self.shard_id, fill_value=[])
             )
             self.dataset.prefetch([i for s in batches for i in s])
 
             if shuffle and fix_batches_to_gpus:
-                batches = shuffle_batches(batches, self.seed + epoch + self.shard_id)
+                batches = shuffle_batches(
+                    batches, self.seed + epoch + self.shard_id)
         else:
             if shuffle:
-                batches = shuffle_batches(list(self.frozen_batches), self.seed + epoch)
+                batches = shuffle_batches(
+                    list(self.frozen_batches), self.seed + epoch)
             else:
                 batches = self.frozen_batches
             batches = list(
-                ShardedIterator(batches, self.num_shards, self.shard_id, fill_value=[])
+                ShardedIterator(batches, self.num_shards,
+                                self.shard_id, fill_value=[])
             )
 
         if offset > 0 and offset >= len(batches):
@@ -556,7 +562,8 @@ class ShardedIterator(CountingIterator):
             operator.itemgetter(1),
             itertools.zip_longest(
                 range(sharded_len),
-                itertools.islice(iterable, shard_id, len(iterable), num_shards),
+                itertools.islice(iterable, shard_id,
+                                 len(iterable), num_shards),
                 fillvalue=fill_value,
             ),
         )
