@@ -1027,9 +1027,9 @@ class Trainer(object):
 
             xm.rendezvous("valid_step")  # wait for all workers
             xm.mark_step()
-        extra_kwargs = {}
-        if self.cfg.ema.store_ema and getattr(self.task, "uses_ema", False):
-            extra_kwargs["ema_model"] = self.ema.get_model()
+        # extra_kwargs = {}
+        # if self.cfg.ema.store_ema and getattr(self.task, "uses_ema", False):
+        #     extra_kwargs["ema_model"] = self.ema.get_model()
             
         # with torch.no_grad():
         self.model.eval()
@@ -1039,7 +1039,7 @@ class Trainer(object):
 
         try:
             _loss, sample_size, logging_output = self.task.valid_step(
-                sample, self.model, self.criterion, get_valid_grad=get_valid_grad, **extra_kwargs
+                sample, self.model, self.criterion, get_valid_grad=get_valid_grad
             )
         except RuntimeError as e:
             if "out of memory" in str(e):
