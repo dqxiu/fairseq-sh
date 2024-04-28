@@ -477,7 +477,7 @@ class DatasetConfig(FairseqDataclass):
         },
     )
     max_valid_steps: Optional[int] = field(default=None, metadata={'help': 'How many batches to evaluate',
-                                                                   "argparse_alias": "--nval"})
+"argparse_alias": "--nval"})
     curriculum: int = field(
         default=0, metadata={"help": "don't shuffle batches for first N epochs"}
     )
