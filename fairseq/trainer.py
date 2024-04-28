@@ -1037,16 +1037,35 @@ class Trainer(object):
 
         sample, is_dummy_batch = self._prepare_sample(sample)
 
+        # try:
+        #     if (getattr(self.cfg.model, 'moe_freq', 0) > 0 and
+        #             getattr(self.cfg.dataset, 'batch_size', None) is not None):
+        #         fixed_src_seq_length = getattr(self.cfg.task, 'tokens_per_sample', None) or \
+        #             self.cfg.task.max_source_positions
+        #         assert sample['net_input']['src_tokens'].shape[1] == fixed_src_seq_length, \
+        #             f"got src_seq_length {sample['net_input']['src_tokens'].shape[1]}, " + \
+        #             f"expected {fixed_src_seq_length}"
+        #     _loss, sample_size, logging_output = self.task.valid_step(
+        #         sample, self.model, self.criterion, get_valid_grad=get_valid_grad
+        #     )
+        # except RuntimeError as e:
+        #     if "out of memory" in str(e):
+        #         self._log_oom(e)
+        #         if not raise_oom:
+        #             logger.warning(
+        #                 "ran out of memory in validation step, retrying batch"
+        #             )
+        #             for p in self.model.parameters():
+        #                 if p.grad is not None:
+        #                     p.grad = None  # free some memory
+        #             if self.cuda:
+        #                 torch.cuda.empty_cache()
+        #             return self.valid_step(sample, raise_oom=True)
+        #     raise e
+
         try:
-            if (getattr(self.cfg.model, 'moe_freq', 0) > 0 and
-                    getattr(self.cfg.dataset, 'batch_size', None) is not None):
-                fixed_src_seq_length = getattr(self.cfg.task, 'tokens_per_sample', None) or \
-                    self.cfg.task.max_source_positions
-                assert sample['net_input']['src_tokens'].shape[1] == fixed_src_seq_length, \
-                    f"got src_seq_length {sample['net_input']['src_tokens'].shape[1]}, " + \
-                    f"expected {fixed_src_seq_length}"
             _loss, sample_size, logging_output = self.task.valid_step(
-                sample, self.model, self.criterion, get_valid_grad=get_valid_grad
+                sample, self.model, self.criterion, get_valid_grad=get_valid_grad, **extra_kwargs
             )
         except RuntimeError as e:
             if "out of memory" in str(e):
