@@ -35,7 +35,7 @@ from fairseq.logging import meters, metrics, progress_bar
 from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 from omegaconf import DictConfig, OmegaConf
-
+import torch.nn.functional as F
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -331,7 +331,7 @@ def train(
     baseline_valid_loss = valid_losses[0]
     grad_valid = get_gradient_of_model(trainer._model)
     trainer._model.zero_grad()
-    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path)
+    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     grad_cos_list, loss_diff_list = [], []
     for i, samples in enumerate(progress):
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
