@@ -331,7 +331,7 @@ def train(
     baseline_valid_loss = valid_losses[0]
     grad_valid = get_gradient_of_model(trainer._model)
     trainer._model.zero_grad()
-    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.gpt_model_path)
+    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path)
     grad_cos_list, loss_diff_list = [], []
     for i, samples in enumerate(progress):
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
