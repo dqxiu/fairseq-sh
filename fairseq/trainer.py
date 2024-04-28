@@ -1020,7 +1020,7 @@ class Trainer(object):
         return logging_output
 
     @metrics.aggregate("valid")
-    def valid_step(self, sample, raise_oom=False):
+    def valid_step(self, sample, raise_oom=False, get_valid_grad=False):
         """Do forward pass in evaluation mode."""
         if self.tpu:
             import torch_xla.core.xla_model as xm
@@ -1028,37 +1028,30 @@ class Trainer(object):
             xm.rendezvous("valid_step")  # wait for all workers
             xm.mark_step()
 
-        with torch.no_grad():
-            self.model.eval()
-            self.criterion.eval()
+        # with torch.no_grad():
+        self.model.eval()
+        self.criterion.eval()
 
-            sample, is_dummy_batch = self._prepare_sample(sample)
+        sample, is_dummy_batch = self._prepare_sample(sample)
 
-            try:
-                if (getattr(self.cfg.model, 'moe_freq', 0) > 0 and
-                    getattr(self.cfg.dataset, 'batch_size', None) is not None):
-                    fixed_src_seq_length = getattr(self.cfg.task, 'tokens_per_sample', None) or \
-                                           self.cfg.task.max_source_positions
-                    assert sample['net_input']['src_tokens'].shape[1] == fixed_src_seq_length, \
-                        f"got src_seq_length {sample['net_input']['src_tokens'].shape[1]}, " + \
-                        f"expected {fixed_src_seq_length}"
-                _loss, sample_size, logging_output = self.task.valid_step(
-                    sample, self.model, self.criterion
-                )
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    self._log_oom(e)
-                    if not raise_oom:
-                        logger.warning(
-                            "ran out of memory in validation step, retrying batch"
-                        )
-                        for p in self.model.parameters():
-                            if p.grad is not None:
-                                p.grad = None  # free some memory
-                        if self.cuda:
-                            torch.cuda.empty_cache()
-                        return self.valid_step(sample, raise_oom=True)
-                raise e
+        try:
+            _loss, sample_size, logging_output = self.task.valid_step(
+                sample, self.model, self.criterion, get_valid_grad=get_valid_grad, **extra_kwargs
+            )
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                self._log_oom(e)
+                if not raise_oom:
+                    logger.warning(
+                        "ran out of memory in validation step, retrying batch"
+                    )
+                    for p in self.model.parameters():
+                        if p.grad is not None:
+                            p.grad = None  # free some memory
+                    if self.cuda:
+                        torch.cuda.empty_cache()
+                    return self.valid_step(sample, raise_oom=True)
+            raise e
 
             logging_outputs = [logging_output]
             if is_dummy_batch:
