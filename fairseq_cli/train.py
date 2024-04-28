@@ -36,6 +36,7 @@ from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
 from omegaconf import DictConfig, OmegaConf
 import torch.nn.functional as F
+import json
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -356,7 +357,7 @@ def train(
         end_of_epoch = not itr.has_next()
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
-        loss_diff_list.append(loss_diff)
+        loss_diff_list.append(loss_diff.cpu().item())
         if len(loss_diff_list) >= cfg.task.train_data_num:
             should_stop = True
             break
@@ -562,13 +563,15 @@ def validate(
                     sample, get_valid_grad=get_valid_grad)
 
                 logging_outputs.extend(inner_logging_outputs)
-            task.reduce_metrics(logging_outputs, trainer.get_criterion())
+            # task.reduce_metrics(logging_outputs, trainer.get_criterion())
         # log validation stats
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
         if hasattr(task, "post_validate"):
             task.post_validate(trainer.get_model(), stats, agg)
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
-        valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
+        assert len(inner_logging_outputs) == 1
+        valid_losses.append(inner_logging_outputs[0][cfg.checkpoint.best_checkpoint_metric])
+        # valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
     return valid_losses
 
 
