@@ -1082,12 +1082,12 @@ class Trainer(object):
                     return self.valid_step(sample, raise_oom=True)
             raise e
 
-            logging_outputs = [logging_output]
-            if is_dummy_batch:
-                if torch.is_tensor(sample_size):
-                    sample_size.zero_()
-                else:
-                    sample_size *= 0.0
+        logging_outputs = [logging_output]
+        if is_dummy_batch:
+            if torch.is_tensor(sample_size):
+                sample_size.zero_()
+            else:
+                sample_size *= 0.0
 
         # gather logging outputs from all replicas
         if self.data_parallel_world_size > 1:
