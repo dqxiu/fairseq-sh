@@ -13,7 +13,7 @@ import math
 import os
 import sys
 from typing import Dict, Optional, Any, List, Tuple, Callable
-
+import copy
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -332,12 +332,15 @@ def train(
     baseline_valid_loss = valid_losses[0]
     grad_valid = get_gradient_of_model(trainer._model)
     trainer._model.zero_grad()
-    state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
+    
+    # state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
+    
     grad_cos_list, loss_diff_list = [], []
     doc_str_list = []
     for i, samples in enumerate(progress):
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
+        original_model_state = copy.deepcopy(trainer.model.state_dict()) 
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
@@ -367,8 +370,10 @@ def train(
 
         # reset the model and the optimizer
 
-        trainer._model.load_state_dict(
-            state["model"], strict=True, args=cfg.model)
+        # trainer._model.load_state_dict(
+            # state["model"], strict=True, args=cfg.model)
+        # 恢复模型到初始状态  
+        trainer.model.load_state_dict(original_model_state) 
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
