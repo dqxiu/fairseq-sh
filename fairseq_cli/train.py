@@ -334,7 +334,10 @@ def train(
     trainer._model.zero_grad()
     state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     grad_cos_list, loss_diff_list = [], []
+    doc_str_list = []
     for i, samples in enumerate(progress):
+        sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
+        doc_str_list.append(sentence)
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
@@ -369,7 +372,7 @@ def train(
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
-    res = {"loss_diff": loss_diff_list, "grad_cos_list": grad_cos_list}
+    res = {"loss_diff": loss_diff_list, "grad_cos_list": grad_cos_list, "doc_str_list": doc_str_list}
     directory = os.path.dirname(cfg.task.res_file)
 
     if not os.path.exists(directory):
