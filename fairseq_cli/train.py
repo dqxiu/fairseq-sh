@@ -349,7 +349,7 @@ def train(
         grad_cos = F.cosine_similarity(grad_train.unsqueeze(
             0), grad_valid.unsqueeze(0))[0].item()
         grad_cos_list.append(grad_cos)
-        
+        import pdb; pdb.set_trace()
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
