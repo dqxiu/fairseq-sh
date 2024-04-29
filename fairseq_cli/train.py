@@ -362,7 +362,7 @@ def train(
         end_of_epoch = not itr.has_next()
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
-        # print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}\n")
+        print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}\n")
         loss_diff_list.append(loss_diff)
         if len(loss_diff_list) >= cfg.task.train_data_num:
             should_stop = True
