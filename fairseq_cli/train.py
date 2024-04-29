@@ -337,10 +337,10 @@ def train(
     
     grad_cos_list, loss_diff_list = [], []
     doc_str_list = []
+    original_model_state = copy.deepcopy(trainer.model.state_dict())
     for i, samples in enumerate(progress):
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
-        original_model_state = copy.deepcopy(trainer.model.state_dict()) 
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
@@ -362,7 +362,7 @@ def train(
         end_of_epoch = not itr.has_next()
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
-        print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}\n")
+        # print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}\n")
         loss_diff_list.append(loss_diff)
         if len(loss_diff_list) >= cfg.task.train_data_num:
             should_stop = True
