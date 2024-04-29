@@ -259,6 +259,7 @@ def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
 def get_gradient_of_model(model):
     gradients = None
     for name, param in model.named_parameters():
+        print(name)
         if "embed" not in name and "self_attn" not in name and "layer_norm" not in name and "bias" not in name:
             if gradients is None:
                 gradients = torch.flatten(param.grad.clone().detach())
