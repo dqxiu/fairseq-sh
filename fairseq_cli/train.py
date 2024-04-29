@@ -258,17 +258,14 @@ def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
 
 def get_gradient_of_model(model):
     gradients = None
-    name_list = []
     for name, param in model.named_parameters():
         
-        if "embed" not in name and "self_attn" not in name and "layer_norm" not in name and "bias" not in name:
+        if "embed" not in name and "self_attn" not in name and "layer_norm" not in name and "bias" not in name and "output_projection" not in name:
             if gradients is None:
                 gradients = torch.flatten(param.grad.clone().detach())
             else:
                 gradients = torch.cat(
                     [gradients, torch.flatten(param.grad.clone().detach())])
-            name_list.append(name)
-    print(name_list[0:5])
     return gradients
 
 @metrics.aggregate("train")
@@ -349,17 +346,8 @@ def train(
         ):
             log_output = trainer.train_step(samples)
         grad_train = get_gradient_of_model(trainer._model)
-        # print("grad_train", grad_train)
-        # print("--------------")
-        # print("grad_valid", grad_valid)
-        # print("--------------")
-        # print("grad_train_unsq", grad_train.unsqueeze(0))
-        # print("--------------")
-        # print("grad_valid_unsq", grad_valid.unsqueeze(0))
-        # print("--------------")
         grad_cos = F.cosine_similarity(grad_train.unsqueeze(
             0), grad_valid.unsqueeze(0))[0].item()
-        print("grad_cos", grad_cos)
         grad_cos_list.append(grad_cos)
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
