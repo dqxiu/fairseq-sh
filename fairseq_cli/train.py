@@ -347,7 +347,13 @@ def train(
             log_output = trainer.train_step(samples)
         grad_train = get_gradient_of_model(trainer._model)
         print("grad_train", grad_train)
+        print("--------------")
         print("grad_valid", grad_valid)
+        print("--------------")
+        print("grad_train_unsq", grad_train.unsqueeze(0))
+        print("--------------")
+        print("grad_valid_unsq", grad_valid.unsqueeze(0))
+        print("--------------")
         grad_cos = F.cosine_similarity(grad_train.unsqueeze(
             0), grad_valid.unsqueeze(0))[0].item()
         print("grad_cos", grad_cos)
