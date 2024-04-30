@@ -326,15 +326,13 @@ def train(
     logger.info("Start iterating over samples")
 
     assert not os.path.exists(cfg.task.res_file)
-    
     logger.info("Baseline Validation Loss")
-    trainer._model.zero_grad()
     valid_losses, sample_losses = validate(cfg, trainer, task, epoch_itr,
                             valid_subsets, get_valid_grad=False)
     baseline_valid_loss = valid_losses[0]
     baseline_sample_loss = sample_losses[0]
     # grad_valid = get_gradient_of_model(trainer._model)
-    # trainer._model.zero_grad()
+    trainer._model.zero_grad()
     # state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     
     grad_cos_list, loss_diff_list, sample_loss_diff_list = [], [], []
@@ -347,8 +345,6 @@ def train(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
-            trainer._model.zero_grad()
-            
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
@@ -375,6 +371,7 @@ def train(
         logger.info(f"iteration {i} validation ended")
         trainer.model.load_state_dict(original_model_state) 
         trainer._build_optimizer()
+        torch.cuda.empty_cache()
 
     # save grad_cos and loss_diff
     res = {"loss_diff": loss_diff_list, "sample_loss_diff": sample_loss_diff_list, "doc_str": doc_str_list}
