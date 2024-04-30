@@ -369,7 +369,7 @@ def train(
         # reset the model and the optimizer
         # 恢复模型到初始状态  
         logger.info(f"iteration {i} validation ended")
-        trainer.model.load_state_dict(original_model_state, strict
+        trainer.model.load_state_dict(original_model_state)
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
