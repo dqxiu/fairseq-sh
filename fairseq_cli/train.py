@@ -369,9 +369,8 @@ def train(
         # reset the model and the optimizer
         # 恢复模型到初始状态  
         logger.info(f"iteration {i} validation ended")
-        trainer.model.load_state_dict(original_model_state) 
+        trainer.model.load_state_dict(original_model_state, strict
         trainer._build_optimizer()
-        torch.cuda.empty_cache()
 
     # save grad_cos and loss_diff
     res = {"loss_diff": loss_diff_list, "sample_loss_diff": sample_loss_diff_list, "doc_str": doc_str_list}
@@ -566,9 +565,12 @@ def validate(
                     break
                 # trainer.valid_step(sample)
                 # inner_logging_outputs = trainer.valid_step(sample)
+                logger.info(
+                    f"---before v took {time.time() - start_time} seconds")
                 inner_logging_outputs = trainer.valid_step(
                     sample, get_valid_grad=get_valid_grad)
-
+                logger.info(
+                    f"---after v took {time.time() - start_time} seconds")
                 logging_outputs.extend(inner_logging_outputs)
             reduce_start_time = time.time()
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
