@@ -326,26 +326,29 @@ def train(
     logger.info("Start iterating over samples")
 
     assert not os.path.exists(cfg.task.res_file)
+    
     logger.info("Baseline Validation Loss")
+    trainer._model.zero_grad()
     valid_losses, sample_losses = validate(cfg, trainer, task, epoch_itr,
                             valid_subsets, get_valid_grad=False)
     baseline_valid_loss = valid_losses[0]
     baseline_sample_loss = sample_losses[0]
     # grad_valid = get_gradient_of_model(trainer._model)
-    trainer._model.zero_grad()
+    # trainer._model.zero_grad()
     # state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     
     grad_cos_list, loss_diff_list, sample_loss_diff_list = [], [], []
     doc_str_list = []
     original_model_state = copy.deepcopy(trainer.model.state_dict()) 
     for i, samples in enumerate(progress):
-        trainer._model.zero_grad()
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
+            trainer._model.zero_grad()
+            
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
