@@ -327,57 +327,54 @@ def train(
 
     assert not os.path.exists(cfg.task.res_file)
     logger.info("Baseline Validation Loss")
-    valid_losses = validate(cfg, trainer, task, epoch_itr,
+    valid_losses, sample_losses = validate(cfg, trainer, task, epoch_itr,
                             valid_subsets, get_valid_grad=False)
     baseline_valid_loss = valid_losses[0]
+    baseline_sample_loss = sample_losses[0]
     # grad_valid = get_gradient_of_model(trainer._model)
     trainer._model.zero_grad()
     
     # state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     
-    grad_cos_list, loss_diff_list = [], []
+    grad_cos_list, loss_diff_list, sample_loss_diff_list = [], [], []
     doc_str_list = []
-    original_model_state = copy.deepcopy(trainer.model.state_dict())
+    original_model_state = copy.deepcopy(trainer.model.state_dict()) 
     for i, samples in enumerate(progress):
+        
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
+        
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
-        # grad_train = get_gradient_of_model(trainer._model)
-        # grad_cos = F.cosine_similarity(grad_train.unsqueeze(
-        #     0), grad_valid.unsqueeze(0))[0].item()
-        # grad_cos_list.append(grad_cos)
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
             if num_updates % cfg.common.log_interval == 0:
                 stats = get_training_stats(metrics.get_smoothed_values("train_inner"))
                 progress.log(stats, tag="train_inner", step=num_updates)
-                # reset mid-epoch stats after each log interval
-                # the end-of-epoch stats will still be preserved
                 metrics.reset_meters("train_inner")
 
         end_of_epoch = not itr.has_next()
-        valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
+        valid_losses, sample_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
-        print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}\n")
         loss_diff_list.append(loss_diff)
+        sample_loss_diff = baseline_sample_loss - sample_losses[0]
+        sample_loss_diff_list.append(sample_loss_diff)
+        print(f"baseline_valid_loss: {baseline_valid_loss}, valid_loss: {valid_losses[0]}, loss_diff: {loss_diff}, baseline_sample_loss: {baseline_sample_loss}, sample_loss: {sample_losses[0]}, sample_loss_diff: {sample_loss_diff}")
+
         if len(loss_diff_list) >= cfg.task.train_data_num:
             should_stop = True
             break
 
         # reset the model and the optimizer
-
-        # trainer._model.load_state_dict(
-            # state["model"], strict=True, args=cfg.model)
         # 恢复模型到初始状态  
         trainer.model.load_state_dict(original_model_state) 
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
-    res = {"loss_diff": loss_diff_list, "grad_cos_list": grad_cos_list, "doc_str_list": doc_str_list}
+    res = {"loss_diff": loss_diff_list, "sample_loss_diff": sample_loss_diff_list, "doc_str": doc_str_list}
     directory = os.path.dirname(cfg.task.res_file)
 
     if not os.path.exists(directory):
@@ -394,7 +391,6 @@ def train(
     # reset epoch-level meters
     metrics.reset_meters("train")
     return valid_losses, should_stop
-
 
 def _flatten_config(cfg: DictConfig):
     config = OmegaConf.to_container(cfg)
@@ -517,6 +513,7 @@ def validate(
 
     trainer.begin_valid_epoch(epoch_itr.epoch)
     valid_losses = []
+    sample_losses = []
     for subset in subsets:
         logger.info('begin validation on "{}" subset on rank {}'.format(
             subset, distributed_utils.get_global_rank()))
@@ -580,7 +577,9 @@ def validate(
         # assert len(inner_logging_outputs) == 1
         # valid_losses.append(inner_logging_outputs[0][cfg.checkpoint.best_checkpoint_metric])
         valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
-    return valid_losses
+        sample_losses.append(stats["sample_loss"])
+
+    return valid_losses, sample_losses
 
 
 def get_valid_stats(

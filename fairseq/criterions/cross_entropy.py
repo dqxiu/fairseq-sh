@@ -66,11 +66,14 @@ class CrossEntropyCriterion(FairseqCriterion):
 
         # we divide by log(2) to convert the loss from base e to base 2
         metrics.log_scalar(
-            "loss", loss_sum / sample_size / math.log(2), sample_size, round=8
+            "loss", loss_sum / sample_size / math.log(2), sample_size, round=10
         )
+        
+        metrics.log_scalar("sample_loss", loss_sum / len(logging_outputs) / math.log(2), len(logging_outputs), round=10)
+
         if sample_size != ntokens:
             metrics.log_scalar(
-                "nll_loss", loss_sum / ntokens / math.log(2), ntokens, round=8
+                "nll_loss", loss_sum / ntokens / math.log(2), ntokens, round=10
             )
             metrics.log_derived(
                 "ppl", lambda meters: utils.get_perplexity(meters["nll_loss"].avg)
