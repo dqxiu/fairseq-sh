@@ -339,15 +339,12 @@ def train(
     doc_str_list = []
     original_model_state = copy.deepcopy(trainer.model.state_dict()) 
     for i, samples in enumerate(progress):
-        logger.info(f"iteration {i} started")
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
-        logger.info(f"iteration {i} training started")
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
-        logger.info(f"iteration {i} training finished")
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
@@ -371,9 +368,8 @@ def train(
 
         # reset the model and the optimizer
         # 恢复模型到初始状态  
-        logger.info(f"iteration {i} reset model started")
+        logger.info(f"iteration {i} validation ended")
         trainer.model.load_state_dict(original_model_state) 
-        logger.info(f"iteration {i} reset model finished")
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
@@ -560,6 +556,8 @@ def validate(
 
         # create a new root metrics aggregator so validation metrics
         # don't pollute other aggregators (e.g., train meters)
+        logger.info('---Begin looping over validation "{}" subset'.format(subset))
+        import time; start_time = time.time()
         with metrics.aggregate(new_root=True) as agg:
             logging_outputs = []
             for i, sample in enumerate(progress):
@@ -571,8 +569,13 @@ def validate(
                     sample, get_valid_grad=get_valid_grad)
 
                 logging_outputs.extend(inner_logging_outputs)
+            reduce_start_time = time.time()
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
+            logger.info(f"--reduce metrics took {time.time() - reduce_start_time} seconds")
         # log validation stats
+        end_time = time.time()
+        logger.info(f"---validation on {subset} took {end_time - start_time} seconds")
+
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
         if hasattr(task, "post_validate"):
             task.post_validate(trainer.get_model(), stats, agg)
