@@ -339,6 +339,7 @@ def train(
     doc_str_list = []
     original_model_state = copy.deepcopy(trainer.model.state_dict()) 
     for i, samples in enumerate(progress):
+        trainer._model.zero_grad()
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
