@@ -333,21 +333,21 @@ def train(
     baseline_sample_loss = sample_losses[0]
     # grad_valid = get_gradient_of_model(trainer._model)
     trainer._model.zero_grad()
-    
     # state = checkpoint_utils.load_checkpoint_to_cpu(cfg.task.gpt_model_path,load_on_all_ranks=True)
     
     grad_cos_list, loss_diff_list, sample_loss_diff_list = [], [], []
     doc_str_list = []
     original_model_state = copy.deepcopy(trainer.model.state_dict()) 
     for i, samples in enumerate(progress):
-        
+        logger.info(f"iteration {i} started")
         sentence = task.decode(samples[0]['gpt']["net_input"]["src_tokens"][0])
         doc_str_list.append(sentence)
-        
+        logger.info(f"iteration {i} training started")
         with metrics.aggregate("train_inner"), torch.autograd.profiler.record_function(
             "train_step-%d" % i
         ):
             log_output = trainer.train_step(samples)
+        logger.info(f"iteration {i} training finished")
         if log_output is not None:  # not OOM, overflow, ...
             # log mid-epoch stats
             num_updates = trainer.get_num_updates()
@@ -357,6 +357,7 @@ def train(
                 metrics.reset_meters("train_inner")
 
         end_of_epoch = not itr.has_next()
+        logger.info(f"iteration {i} validation started")
         valid_losses, sample_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
         loss_diff = baseline_valid_loss - valid_losses[0]
         loss_diff_list.append(loss_diff)
@@ -370,7 +371,9 @@ def train(
 
         # reset the model and the optimizer
         # 恢复模型到初始状态  
+        logger.info(f"iteration {i} reset model started")
         trainer.model.load_state_dict(original_model_state) 
+        logger.info(f"iteration {i} reset model finished")
         trainer._build_optimizer()
 
     # save grad_cos and loss_diff
