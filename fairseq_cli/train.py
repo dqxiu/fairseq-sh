@@ -530,27 +530,32 @@ def validate(
             )
         )
 
-        progress = progress_bar.progress_bar(
-            itr,
-            log_format=cfg.common.log_format,
-            log_interval=cfg.common.log_interval,
-            epoch=epoch_itr.epoch,
-            prefix=f"valid on '{subset}' subset",
-            tensorboard_logdir=(
-                cfg.common.tensorboard_logdir
-                if distributed_utils.is_master(cfg.distributed_training)
-                else None
-            ),
-            default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
-            wandb_project=(
-                cfg.common.wandb_project
-                if distributed_utils.is_master(cfg.distributed_training)
-                else None
-            ),
-            wandb_run_name=os.environ.get(
-                "WANDB_NAME", os.path.basename(cfg.checkpoint.save_dir)
-            ),
-        )
+        if hasattr(trainer, "buffer_val_data"):
+            progress = trainer.buffer_val_data
+            buffer_val_data = None
+        else:
+            buffer_val_data = []
+            progress = progress_bar.progress_bar(
+                itr,
+                log_format=cfg.common.log_format,
+                log_interval=cfg.common.log_interval,
+                epoch=epoch_itr.epoch,
+                prefix=f"valid on '{subset}' subset",
+                tensorboard_logdir=(
+                    cfg.common.tensorboard_logdir
+                    if distributed_utils.is_master(cfg.distributed_training)
+                    else None
+                ),
+                default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
+                wandb_project=(
+                    cfg.common.wandb_project
+                    if distributed_utils.is_master(cfg.distributed_training)
+                    else None
+                ),
+                wandb_run_name=os.environ.get(
+                    "WANDB_NAME", os.path.basename(cfg.checkpoint.save_dir)
+                ),
+            )
 
         logger.info('Begin looping over validation "{}" subset with length "{}"'.format(subset, len(progress)))
 
@@ -561,16 +566,14 @@ def validate(
         with metrics.aggregate(new_root=True) as agg:
             logging_outputs = []
             for i, sample in enumerate(progress):
+                if buffer_val_data is not None:
+                    buffer_val_data.append(sample)
                 if cfg.dataset.max_valid_steps is not None and i > cfg.dataset.max_valid_steps:
                     break
                 # trainer.valid_step(sample)
                 # inner_logging_outputs = trainer.valid_step(sample)
-                logger.info(
-                    f"---before v took {time.time() - start_time} seconds")
                 inner_logging_outputs = trainer.valid_step(
                     sample, get_valid_grad=get_valid_grad)
-                logger.info(
-                    f"---after v took {time.time() - start_time} seconds")
                 logging_outputs.extend(inner_logging_outputs)
             reduce_start_time = time.time()
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
@@ -582,11 +585,16 @@ def validate(
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
         if hasattr(task, "post_validate"):
             task.post_validate(trainer.get_model(), stats, agg)
-        progress.print(stats, tag=subset, step=trainer.get_num_updates())
+        
+        if buffer_val_data is not None:
+            progress.print(stats, tag=subset, step=trainer.get_num_updates())
         # assert len(inner_logging_outputs) == 1
         # valid_losses.append(inner_logging_outputs[0][cfg.checkpoint.best_checkpoint_metric])
         valid_losses.append(stats[cfg.checkpoint.best_checkpoint_metric])
         sample_losses.append(stats["sample_loss"])
+
+        if buffer_val_data is not None:
+            trainer.buffer_val_data = buffer_val_data
 
     return valid_losses, sample_losses
 
