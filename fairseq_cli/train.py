@@ -556,7 +556,6 @@ def validate(
 
         # create a new root metrics aggregator so validation metrics
         # don't pollute other aggregators (e.g., train meters)
-        logger.info('---Begin looping over validation "{}" subset'.format(subset))
         import time; start_time = time.time()
         with metrics.aggregate(new_root=True) as agg:
             logging_outputs = []
@@ -565,19 +564,13 @@ def validate(
                     break
                 # trainer.valid_step(sample)
                 # inner_logging_outputs = trainer.valid_step(sample)
-                logger.info(
-                    f"---before v took {time.time() - start_time} seconds")
                 inner_logging_outputs = trainer.valid_step(
                     sample, get_valid_grad=get_valid_grad)
-                logger.info(
-                    f"---after v took {time.time() - start_time} seconds")
                 logging_outputs.extend(inner_logging_outputs)
             reduce_start_time = time.time()
             task.reduce_metrics(logging_outputs, trainer.get_criterion())
-            logger.info(f"--reduce metrics took {time.time() - reduce_start_time} seconds")
         # log validation stats
         end_time = time.time()
-        logger.info(f"---validation on {subset} took {end_time - start_time} seconds")
 
         stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
         if hasattr(task, "post_validate"):
